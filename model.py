@@ -8,6 +8,7 @@ from PIL import Image
 from torchvision import transforms
 import matplotlib.pyplot as plt
 import torch.optim as optim
+import numpy as np
 
 def _make_divisible(v, divisor, min_value=None):
     """
@@ -28,9 +29,12 @@ def _make_divisible(v, divisor, min_value=None):
         new_v += divisor
     return new_v
 
+
 class SpatialTransformer(nn.Module):
-    def __init__(self):
+    def __init__(self, shearing=True):
         super(SpatialTransformer, self).__init__()
+        self.shearing = shearing
+
         self.localization = nn.Sequential(
             nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False),
             nn.AvgPool2d(2, stride=2),
@@ -54,16 +58,27 @@ class SpatialTransformer(nn.Module):
             # nn.MaxPool2d(2, stride=2),
         )
         self.localization[0].weight.data.zero_()
-        # Regressor for the 3 * 2 affine matrix
-        self.fc_loc = nn.Sequential(
-            # nn.Linear(3 * 112 * 112, 6),
-            # nn.ReLU(True),
-            nn.Linear(3 * 112 * 112, 3 * 2)
-        )
-        # Initialize the weights/bias with identity transformation
+        if self.shearing:
+            # Regressor for the 3 * 2 affine matrix
+            self.fc_loc = nn.Sequential(
+                # nn.Linear(3 * 112 * 112, 6),
+                # nn.ReLU(True),
+                nn.Linear(3 * 112 * 112, 3 * 2)
+            )
+            # Initialize the weights/bias with identity transformation
 
-        self.fc_loc[0].weight.data.zero_()
-        self.fc_loc[0].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
+            self.fc_loc[0].weight.data.zero_()
+            self.fc_loc[0].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
+        else:
+            self.fc_loc = nn.Sequential(
+                # nn.Linear(3 * 112 * 112, 6),
+                # nn.ReLU(True),
+                nn.Linear(3 * 112 * 112, 2 * 2)
+            )
+            # Initialize the weights/bias with identity transformation
+
+            self.fc_loc[0].weight.data.zero_()
+            self.fc_loc[0].bias.data.copy_(torch.tensor([1, 0, 0, 0], dtype=torch.float))
 
     def stn(self, x):
         xs = self.localization(x)
@@ -75,8 +90,44 @@ class SpatialTransformer(nn.Module):
         x = F.grid_sample(x, grid)
         return x
 
+    def oshear_stn(self, x):
+        xs = self.localization(x)
+        xs = xs.view(-1, 3 * 112 * 112)
+        transformer = self.fc_loc(xs)
+
+        transformer = transformer.view(-1, 4)
+        theta = torch.zeros(transformer.size()[0], 2, 3)
+        for i in range(transformer.size()[0]):
+            scale = (transformer[i][0] ** 2 + transformer[i][1] ** 2) ** (1 / 2)
+            theta[i][0][0] = transformer[i][0]
+            theta[i][0][1] = -transformer[i][1]
+            theta[i][0][2] = transformer[i][2]
+            theta[i][1][0] = transformer[i][1]
+            theta[i][1][1] = transformer[i][0]
+            theta[i][1][2] = transformer[i][2]
+            np_theta = theta[i].detach().numpy()
+            s = np.linalg.eigvals(np_theta[:, :-1])
+            R = s.max() / s.min()
+
+            if R >= 2.0:
+                theta[i][0][0] = 1.0
+                theta[i][0][1] = 0.0
+                theta[i][0][2] = 0.0
+                theta[i][1][0] = 0.0
+                theta[i][1][1] = 1.0
+                theta[i][1][2] = 0.0
+
+        theta = theta.cuda()
+        grid = F.affine_grid(theta, x.size())
+        x = F.grid_sample(x, grid)
+
+        return x
+
     def forward(self, x):
-        x = self.stn(x)
+        if self.shearing:
+            x = self.stn(x)
+        else:
+            x = self.oshear_stn(x)
         return x
 
 
@@ -120,7 +171,8 @@ class STN_MobileNet2(nn.Module):
     """STN_MobileNet2 implementation.
     """
 
-    def __init__(self, scale=1.0, input_size=224, t=6, in_channels=3, num_classes=101, activation=nn.ReLU6):
+    def __init__(self, scale=1.0, input_size=224, t=6, in_channels=3, num_classes=101, activation=nn.ReLU6,
+                 shearing=True):
         """
         STN_MobileNet2 constructor.
         :param in_channels: (int, optional): number of channels in the input tensor.
@@ -136,6 +188,7 @@ class STN_MobileNet2(nn.Module):
         super(STN_MobileNet2, self).__init__()
 
         self.scale = scale
+        self.shearing = shearing
         self.t = t
         self.activation_type = activation
         self.activation = activation(inplace=True)
@@ -160,7 +213,7 @@ class STN_MobileNet2(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.dropout = nn.Dropout(p=0.2, inplace=True)  # confirmed by paper authors
         self.fc = nn.Linear(self.last_conv_out_ch, self.num_classes)
-        self.stnmod = SpatialTransformer()
+        self.stnmod = SpatialTransformer(self.shearing)
 
     def init_params(self):
         for m in self.modules():
@@ -231,7 +284,7 @@ class STN_MobileNet2(nn.Module):
         # flatten for input to fully-connected layer
         x = x.view(x.size(0), -1)
         x = self.fc(x)
-        return x #TODO not needed(?)
+        return x  # TODO not needed(?)
 
 
 if __name__ == "__main__":
