@@ -62,6 +62,7 @@ parser.add_argument('--log-interval', type=int, default=30, metavar='N', help='N
 parser.add_argument('--seed', type=int, default=None, metavar='S', help='random seed (default: 1)')
 
 # Architecture
+parser.add_argument('--shearing', type=int, default=True,  help='Applying constrain (no shearing) to STN')
 parser.add_argument('--scaling', type=float, default=1, metavar='SC', help='Scaling of MobileNet (default x1).')
 parser.add_argument('--input-size', type=int, default=224, metavar='I',
                     help='Input size of MobileNet, multiple of 32 (default 224).')
@@ -117,7 +118,7 @@ def main():
     else:
         raise ValueError('Wrong type!')  # TODO int8
 
-    model = STN_MobileNet2(input_size=args.input_size, scale=args.scaling)
+    model = STN_MobileNet2(input_size=args.input_size, scale=args.scaling, shear=args.shearing)
     # print(model.stnmod.fc_loc[0].bias.data)
     num_parameters = sum([l.nelement() for l in model.parameters()])
     print(model)
