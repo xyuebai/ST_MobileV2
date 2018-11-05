@@ -97,7 +97,7 @@ def main():
     if args.evaluate:
         args.results_dir = '/tmp'
     if args.save is '':
-        args.save = 'pretrain_stn_' + time_stamp
+        args.save = 'pretrain_aug_' + time_stamp
     save_path = os.path.join(args.results_dir, args.save)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
@@ -118,7 +118,7 @@ def main():
     else:
         raise ValueError('Wrong type!')  # TODO int8
 
-    model = STN_MobileNet2(input_size=args.input_size, scale=args.scaling, shear=args.shearing)
+    model = STN_MobileNet2(input_size=args.input_size, scale=args.scaling, shearing=args.shearing)
     # print(model.stnmod.fc_loc[0].bias.data)
     num_parameters = sum([l.nelement() for l in model.parameters()])
     print(model)
@@ -258,3 +258,4 @@ def train_network(start_epoch, epochs, scheduler, model, train_loader, val_loade
 
 if __name__ == '__main__':
     main()
+

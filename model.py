@@ -341,3 +341,4 @@ if __name__ == "__main__":
     # model5 = MobileNet2(input_size=196, num_classes=10)
     # x3 = torch.randn(1, 3, 196, 196)
     # print(model5(x3))  # fail
+

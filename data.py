@@ -9,6 +9,7 @@ from torchvision import datasets, transforms
 __imagenet_stats = {'mean': [0.485, 0.456, 0.406],
                     'std': [0.229, 0.224, 0.225]}
 
+
 def make_weights_for_balanced_classes(images, nclasses):
     count = [0] * nclasses
     for item in images:
@@ -16,15 +17,18 @@ def make_weights_for_balanced_classes(images, nclasses):
     weight_per_class = [0.] * nclasses
     N = float(sum(count))
     for i in range(nclasses):
-        weight_per_class[i] = N/float(count[i])
+        weight_per_class[i] = N / float(count[i])
     weight = [0] * len(images)
     for idx, val in enumerate(images):
         weight[idx] = weight_per_class[val[1]]
     return weight
 
+
 def inception_preproccess(input_size, normalize=__imagenet_stats):
     return transforms.Compose([
-        transforms.RandomResizedCrop(input_size),
+        transforms.RandomResizedCrop(input_size, scale=(0.8, 1.2)), # move center, adjust ratio, scaling
+        transforms.RandomAffine(90, translate=(0.01, 0.01), shear=30, resample=False,
+                                            fillcolor=0), # move center, rotation, shearing
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize(**normalize)
@@ -55,8 +59,8 @@ def get_transform(augment=True, input_size=224):
 def get_loaders(dataroot, val_batch_size, train_batch_size, input_size, workers, b_weights):
     test_data = datasets.ImageFolder(root=os.path.join(dataroot, 'test'), transform=get_transform(False, input_size))
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=val_batch_size, shuffle=False, num_workers=workers,
-                                             pin_memory=True)
-    
+                                              pin_memory=True)
+
     val_data = datasets.ImageFolder(root=os.path.join(dataroot, 'val'), transform=get_transform(False, input_size))
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=val_batch_size, shuffle=False, num_workers=workers,
                                              pin_memory=True)
